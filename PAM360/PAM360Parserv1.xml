@@ -1,0 +1,21 @@
+<patternDefinitions>
+  <pattern name="patSep"><![CDATA[\s+|\t+]]></pattern>
+  <pattern name="patUser"><![CDATA[.*?:]]></pattern>
+  <pattern name="patSentence"><![CDATA[[^ ]*[\s[^ ]*]*]]></pattern>
+  <pattern name="patReg"><![CDATA[ResourceAudit|UserAudit]]></pattern>
+</patternDefinitions>
+<eventFormatRecognizer><![CDATA[<:patReg>]]></eventFormatRecognizer>
+<parsingInstructions>
+<collectFieldsByRegex src="$_rawmsg">
+  <regex>
+    <![CDATA[<:gPatSyslogPRI>?<:gPatMon><:patSep><:gPatDay><:patSep><:gPatTime>\s+<:gPatStr>\s+<_body:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+
+
+<collectFieldsByRegex src="$_body">
+  <regex>
+    <![CDATA[<_eventType:patReg>:<user:gPatStrEndColon>:<srcIpAddr:gPatStr><:patSep><action:gPatStr><:patSep><:gPatStr><:patSep><:gPatStr><:patSep><status:gPatStr>]]></regex>
+</collectFieldsByRegex>
+
+<setEventAttribute attr="eventType">combineMsgId( $_eventType, "-", $status)</setEventAttribute>
+</parsingInstructions>
