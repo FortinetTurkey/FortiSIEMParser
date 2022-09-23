@@ -1,0 +1,3 @@
+<38>Sep 21 13:53:37 TK06PAM01 UserAudit:N/A:10.20.12.18 User_Logged_Out 2022/09/21 13:53:36 Success TK06PAM01 -Mehmet_Ozyoruk:N/A
+
+<38>Sep 21 13:41:02 TK06PAM01 ResourceAudit:SemsAksoy:172.16.10.12 Session_Started 2022/09/21 13:41:01 Success TK06PAM01 TK06PAM01:mydomain\tk0007etl:N/A:RDP_initiated_from_PAM360_to_TK06PAM01
