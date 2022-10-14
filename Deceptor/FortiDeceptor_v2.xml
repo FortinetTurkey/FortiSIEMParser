@@ -1,0 +1,1522 @@
+<patternDefinitions>
+<pattern name="patStrEndSep"><![CDATA[[^|]*]]></pattern>
+</patternDefinitions>
+<eventFormatRecognizer><![CDATA[\s+device=FortiDeceptor\s|\s(?:devid|device_id)=FDC-VM\d\w*\s]]></eventFormatRecognizer>
+<parsingInstructions>
+<collectFieldsByRegex src="$_rawmsg">
+<regex><![CDATA[<:gPatSyslogPRI>?<_year:gPatYear>-<_mon:gPatMonNum>-<_day:gPatDay>T<_time:gPatTime>(?:<_tz:gPatTimeZone>)?\s+<_body:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Generic</setEventAttribute>
+<collectFieldsByKeyValuePair kvsep="=" sep=" " src="$_body">
+<attrKeyMap attr="action" key="action"/>
+<attrKeyMap attr="_date" key="date"/>
+<attrKeyMap attr="reptDevName" key="devhost"/>
+<attrKeyMap attr="logLevel" key="level"/>
+<attrKeyMap attr="_pri" key="pri"/>
+<attrKeyMap attr="logID" key="logid"/>
+<attrKeyMap attr="msg" key="msg"/>
+<attrKeyMap attr="status" key="status"/>
+<attrKeyMap attr="subtype" key="subtype"/>
+<attrKeyMap attr="_time" key="time"/>
+<attrKeyMap attr="type" key="type"/>
+<attrKeyMap attr="_tz" key="tzone"/>
+<attrKeyMap attr="componentName" key="ui"/>
+<attrKeyMap attr="user" key="user"/>
+</collectFieldsByKeyValuePair>
+<when test="exist _date">
+<collectFieldsByRegex src="$_date">
+<regex><![CDATA[<_year:gPatYear>-<_mon:gPatMon>-<_day:gPatDay>]]></regex>
+</collectFieldsByRegex>
+</when>
+<!-- We parse deviceTime from header, but if body contains it will override -->
+<choose>
+<when test="exist _tz">
+<!-- Need to append + if not present, Deceptor doesnt add + for postive offset -->
+<when test="matches($_tz, '^\d+')">
+<setEventAttribute attr="_tz">combineMsgId("+", $_tz)</setEventAttribute>
+</when>
+<!-- toDateTime expects a tz second offset with sec appended -->
+<setEventAttribute attr="_tz">combineMsgId($_tz, "sec")</setEventAttribute>
+<setEventAttribute attr="deviceTime">toDateTime($_mon, $_day, $_year, $_time, $_tz)</setEventAttribute>
+</when>
+<otherwise>
+<setEventAttribute attr="deviceTime">toDateTime($_mon, $_day, $_year, $_time)</setEventAttribute>
+</otherwise>
+</choose>
+<choose>
+<when test="$logLevel = 'critical'">
+<setEventAttribute attr="eventSeverity">9</setEventAttribute>
+</when>
+<when test="$logLevel = 'alert'">
+<setEventAttribute attr="eventSeverity">8</setEventAttribute>
+</when>
+<when test="$logLevel = 'debug'">
+<setEventAttribute attr="eventSeverity">2</setEventAttribute>
+</when>
+<when test="$logLevel = 'warning'">
+<setEventAttribute attr="eventSeverity">3</setEventAttribute>
+</when>
+<when test="$logLevel = 'error'">
+<setEventAttribute attr="eventSeverity">5</setEventAttribute>
+</when>
+<when test="$logLevel = 'information'">
+<setEventAttribute attr="eventSeverity">1</setEventAttribute>
+</when>
+</choose>
+<choose>
+<when test="matches($msg, '.*AttackerI[Pp]=.*')">
+<!-- AttackerIp=10.95.7.155 AttackerPort=38706 VictimIp=23.3.105.139 VictimPort=80 Operation=FortiGuard Web Filtering Host=whatismyip.akamai.com URL=/ -->
+<collectFieldsByKeyValuePair kvsep="=" sep=" " src="$msg">
+<attrKeyMap attr="attackName" key="Attack"/>
+<attrKeyMap attr="srcIpAddr" key="AttackerIP"/>
+<attrKeyMap attr="srcIpAddr" key="AttackerIp"/>
+<attrKeyMap attr="srcIpPort" key="AttackerPort"/>
+<attrKeyMap attr="description" key="Description"/>
+<attrKeyMap attr="destName" key="Host"/>
+<attrKeyMap attr="opName" key="Operation"/>
+<attrKeyMap attr="password" key="Password"/>
+<attrKeyMap attr="serviceName" key="Service"/>
+<attrKeyMap attr="infoURL" key="URL"/>
+<attrKeyMap attr="user" key="Username"/>
+<attrKeyMap attr="destIpAddr" key="VictimIP"/>
+<attrKeyMap attr="destIpAddr" key="VictimIp"/>
+<attrKeyMap attr="destIpPort" key="VictimPort"/>
+</collectFieldsByKeyValuePair>
+<when test="exist opName">
+<choose>
+<when test="$opName = 'Disconnect_SSH_session'">
+<setEventAttribute attr="eventType">FortiDeceptor-SSH-Logout</setEventAttribute>
+</when>
+<when test="matches($opName, '^FortiGuard Web Filtering')">
+<setEventAttribute attr="eventType">FortiDeceptor-FortiGuard-Web-Activity-Alert</setEventAttribute>
+<setEventAttribute attr="serviceName">ARAE Module</setEventAttribute>
+</when>
+<otherwise>
+<setEventAttribute attr="eventType">combineMsgId("FortiDeceptor-", $opName)</setEventAttribute>
+<setEventAttribute attr="eventType">replaceStringByRegex($eventType, "\s+", "_")</setEventAttribute>
+</otherwise>
+</choose>
+</when>
+<when test="exist serviceName">
+<when test="matches($serviceName, '^IEC')">
+<setEventAttribute attr="eventType">FortiDeceptor-SCADA-Alert</setEventAttribute>
+<setEventAttribute attr="serviceName">SCADA Module</setEventAttribute>
+</when>
+</when>
+<when test="exist description">
+<switch>
+<case>
+<!-- Description=response: 200 -->
+<collectFieldsByRegex src="$description">
+<regex><![CDATA[^response:\s*<httpStatusCode:gPatInt>]]></regex>
+</collectFieldsByRegex>
+</case>
+<case>
+<!-- Description=wget https://example.com/ -->
+<collectFieldsByRegex src="$description">
+<regex><![CDATA[^wget\s+<infoURL:gPatStr>]]></regex>
+</collectFieldsByRegex>
+</case>
+<case>
+<!--
+Description=GET: ('/CimWeb/index.html', [], None)
+Description=GET: ('/tests/unittest_databus.html', [('Host', '10.95.7.10'), ('Accept', '*/*'), ('Connection', 'keep-alive'), ('User-Agent', 'python-requests/2.9.1'), ('Accept-Encoding', 'gzip, deflate')], None)
+-->
+<collectFieldsByRegex src="$description">
+<regex><![CDATA[^<httpMethod:gPatWord>:\s*\('<infoURL:gPatStrSQ>',\s*\[<_desc:gPatMesgBody>\],]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="httpStatusCode">200</setEventAttribute>
+<collectAndSetAttrByKeyValuePair sep="'" src="$_desc">
+<attrKeyMap attr="httpUserAgent" key="('User-Agent', '"/>
+</collectAndSetAttrByKeyValuePair>
+</case>
+<default/>
+</switch>
+</when>
+</when>
+<otherwise>
+<switch>
+<case>
+<!-- Administrator xxxx failed to log into website from x.x.x.x -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> failed to log into website from <srcIpAddr:gPatIpAddr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-GUI-Failed-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator xxxx login failed from website(x.x.x.x) because of invalid user name or password. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> login failed from website\(<srcIpAddr:gPatIpV4Dot>\) because of invalid user name or password.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-GUI-Failed-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin failed to log into website from x.x.x.x -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> failed to log into website from <srcIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-GUI-Failed-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin logged into CLI successfully from console. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> logged into CLI successfully from console.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-CLI-Console-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin logged into CLI successfully from ssh(x.x.x.x). -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> logged into CLI successfully from ssh\(<srcIpAddr:gPatIpV4Dot>\).]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-CLI-SSH-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin logged into CLI successfully from telnet(x.x.x.x). -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> logged into CLI successfully from telnet\(<srcIpAddr:gPatIpV4Dot>\).]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-CLI-Telnet-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin logged into website successfully from x.x.x.x -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> logged into website successfully from <srcIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-GUI-Successful-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin logged out CLI successfully from console. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> logged out CLI successfully from console.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-CLI-Console-Logout</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin logged out CLI successfully from ssh(x.x.x.x). -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> logged out CLI successfully from ssh\(<srcIpAddr:gPatIpV4Dot>\).]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-CLI-SSH-Logout</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin logged out CLI successfully from telnet(x.x.x.x). -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> logged out CLI successfully from telnet\(<srcIpAddr:gPatIpV4Dot>\).]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-CLI-Telnet-Logout</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin logged out website successfully from x.x.x.x -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> logged out website successfully from <srcIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-GUI-Logout</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin login failed from ssh(x.x.x.x) because of invalid user name or password. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> login failed from ssh\(<srcIpAddr:gPatIpV4Dot>\) because of invalid user name or password.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Failed-SSH-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Administrator admin login failed from website(x.x.x.x) because of invalid user name or password. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator <user:gPatStr> login failed from website\(<srcIpAddr:gPatIpV4Dot>\) because of invalid user name or password.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Failed-GUI-Login</setEventAttribute>
+<setEventAttribute attr="destIpAddr">$reptDevIpAddr</setEventAttribute>
+</case>
+<case>
+<!-- Apply overwritten web filter server -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Apply overwritten web filter server]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Info</setEventAttribute>
+</case>
+<case>
+<!-- correlation engine starting up -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[correlation engine starting up]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Starting-Correlation-Engine</setEventAttribute>
+</case>
+<case>
+<!-- Deception Template test1 was successfully saved. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Deception Template <_template:gPatStr> was successfully saved]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Template-Saved</setEventAttribute>
+</case>
+<case>
+<!-- Deception VM 10 was successfully deployed. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Deception VM <hostName:gPatStr> was successfully deployed]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Deployed</setEventAttribute>
+</case>
+<case>
+<!-- Deception VM was down unexpectedly, set the signal to restart: name=10 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Deception VM was down unexpectedly, set the signal to restart: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Down</setEventAttribute>
+</case>
+<case>
+<!-- Deleting deception VM: name=0test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Deleting deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Deleting</setEventAttribute>
+</case>
+<case>
+<!-- Downloaded system configuration back-up -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Downloaded system configuration back-up]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Config-Backup</setEventAttribute>
+</case>
+<case>
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Error happened in FDN update process. <:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-FDN-Error</setEventAttribute>
+</case>
+<case>
+<!-- event does not match any dcvm ip, ignored -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[event does not match any dcvm ip, ignored]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Generic</setEventAttribute>
+</case>
+<case>
+<!-- Exception: Failed to initialize deception VM: 'NoneType' object has no attribute 'is_alive' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Exception: Failed to initialize deception VM<:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Initialization-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to start deception VM due to exception: name=lintest -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to start deception VM due to exception: name=<hostName:gPatStrComma>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Failed-To-Start</setEventAttribute>
+</case>
+<case>
+<!-- Failed to activate win7x86v1: no valid key -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to activate <hostName:gPatStr>:? no valid key]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Key-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to download packages from FDN server -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to download packages from FDN server]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-FDN-Download-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to download the server list from FDN server -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to download the server list from FDN server]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-FDN-Download-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to download the server list from web filter server: no contract -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to download the server list from web filter server: no contract]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-FDN-Download-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to generate package for deception VM: x.x.x.x -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to generate package for deception VM: <hostIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Package-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to import new firmware license: Fail to install license file -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to import new firmware license: Fail to install license file]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-License-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to import new firmware license: Invalid License -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to import new firmware license: Invalid License]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-License-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to initialize deception VM due to license/firmware limit is reached: name=123 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to initialize deception VM due to <:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Initialization-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to initialize deception VM due to license/firmware limit is reached: name=123 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to initialize decoy due to exception:<:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Initialization-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to initialize VM name, prepare to retry -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to initialize VM <hostName:gPatStr>, prepare to retry]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Initialization-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to operate deception VM due to process timeout: name=wintest5 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to operate deception VM due to process timeout: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Timeout</setEventAttribute>
+</case>
+<case>
+<!-- Failed to operate the following deception VM(s): lintest, wintest, www -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to operate the following deception VM\(s\): <hostName:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Error</setEventAttribute>
+</case>
+<case>
+<!-- Failed to process deception VM: Failed to load VM scadav1: VM scadav1 is invalid -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to process deception VM: Failed to load VM <hostName:gPatStr>: VM <:gPatStr> is invalid]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Load-Failure</setEventAttribute>
+</case>
+<case>
+<!-- Failed to process deception VM: VM image scadav1 is not ready for deception VM asdasd -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to process deception VM: VM image <hostName:gPatStr> is not ready for deception VM]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Not-Ready</setEventAttribute>
+</case>
+<case>
+<!-- Failed to process deception VM: VM image win7x86v1 is not ready for deception VM test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to process deception VM: VM image <hostName:gPatStr> is not ready for deception VM test]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Load-Failure</setEventAttribute>
+</case>
+<case>
+<!-- Failed to restore system configuration, since the uploaded configuration file 'a.conf' is invalid -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to restore system configuration, since the uploaded configuration file '<fileName:gPatStr>' is invalid]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Restore-Failure</setEventAttribute>
+</case>
+<case>
+<!-- FDN immediate update is scheduled -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[FDN immediate update is scheduled]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-FDN-Update-Scheduled</setEventAttribute>
+</case>
+<case>
+<!-- FDN overridden server setting was updated successfully -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[FDN overridden server setting was updated successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-FDN-Overridden</setEventAttribute>
+</case>
+<case>
+<!-- Finished initializing deception VMs. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Finished initializing deception VMs.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Finished-Initializing-Decoys</setEventAttribute>
+</case>
+<case>
+<!-- Finished initializing VMs. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Finished initializing VMs.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Finished-Initializing-Decoys</setEventAttribute>
+</case>
+<case>
+<!-- Finished initializing decoys. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Finished initializing decoys]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Finished-Initializing-Decoys</setEventAttribute>
+</case>
+<case>
+<!-- Firmware upgrade failed: ERROR: Failed to install new firmware image. (Failed to mount runtime root section) . -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Firmware upgrade failed: ERROR: Failed to install new firmware image. \(Failed to mount runtime root section\)]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Upgrade-Failed</setEventAttribute>
+</case>
+<case>
+<!-- Firmware upgrade failed: FortiDeceptor doesn't support firmware downgrade. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Firmware upgrade failed: FortiDeceptor doesn't support firmware downgrade]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Upgrade-Failed</setEventAttribute>
+</case>
+<case>
+<!-- Firmware upgrade Warning: The upgrade process took too long to finish. Please try again later. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Firmware upgrade Warning: The upgrade process took too long to finish. Please try again later]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Upgrade-Warning</setEventAttribute>
+</case>
+<case>
+<!-- Firmware was successfully upgraded. System will reboot in a few seconds. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Firmware was successfully upgraded. System will reboot in a few seconds]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Upgrade-Success</setEventAttribute>
+</case>
+<case>
+<!-- FortiDeceptor system is up. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[FortiDeceptor system is up]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-System-Up</setEventAttribute>
+</case>
+<case>
+<!-- FortiDeceptor will be manually reboot in a few seconds. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[FortiDeceptor will be manually reboot in a few seconds]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Manual-Reboot</setEventAttribute>
+</case>
+<case>
+<!-- Image file FDC_VM-v100-build0018-FORTINET.out was uploaded successfully. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Image file <imageFile:gPatStr> was uploaded successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Image-Upload-Success</setEventAttribute>
+</case>
+<case>
+<!-- Initializing system to backup database -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Initializing system to backup database]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Backup-Initializing</setEventAttribute>
+</case>
+<case>
+<!-- Interface port1 was set successfully in CLI. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Interface <intfName:gPatStr> was set successfully in CLI]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Interface-Set</setEventAttribute>
+</case>
+<case>
+<!-- ipsreader is done. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[ipsreader is done.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-IPSReader-Done</setEventAttribute>
+</case>
+<case>
+<!-- ipsreader is starting. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[ipsreader is starting.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-IPSReader-Starting</setEventAttribute>
+</case>
+<case>
+<!-- IPv4 default gateway was set successfully in CLI. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[IPv4 default gateway was set successfully in CLI]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Gateway-Set</setEventAttribute>
+</case>
+<case>
+<!-- Login disabled from IP x.x.x.x for 60 seconds because of 3 bad attempts. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Login disabled from IP <srcIpAddr:gPatIpV4Dot> for \d+ seconds because of \d+ bad attempts]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Login-Disabled</setEventAttribute>
+</case>
+<case>
+<!-- logprocessor reconnected to db -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[logprocessor reconnected to db]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-LogProcessor-Reconneced</setEventAttribute>
+</case>
+<case>
+<!-- logprocessor starting up -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[logprocessor starting up]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-LogProcessor-Starting</setEventAttribute>
+</case>
+<case>
+<!-- Monitored Network configuration was successfully saved: . -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Monitored Network configuration was successfully saved: ]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Network-Config-Saved</setEventAttribute>
+</case>
+<case>
+<!-- Network alert pakcage is missing file(s). -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Network alert pakcage is missing file\(s\)]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Missing-File</setEventAttribute>
+</case>
+<case>
+<!-- Network interface configuration was successfully updated -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Network interface configuration was successfully updated]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Network-Config-Saved</setEventAttribute>
+</case>
+<case>
+<!-- Package version file /drive0/system/temp-upgrade/avadb-00066.01070-2ddf78cbd2b2f9cac29457b08c00c787.ver does not exist. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Package version file <fileName:gPatStr> does not exist]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Package-Not-Exist</setEventAttribute>
+</case>
+<case>
+<!-- Package was generated successfully for deception VM: x.x.x.x -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Package was generated successfully for deception VM: <hostIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Package-Generate</setEventAttribute>
+</case>
+<case>
+<!-- Prepared the certificate for sshd server -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Prepared the certificate for sshd server]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SSH-Cert-Prepared</setEventAttribute>
+</case>
+<case>
+<!-- Prepared the certificate for web server successfully -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Prepared the certificate for web server successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-GUI-Cert-Prepared</setEventAttribute>
+</case>
+<case>
+<!-- Reboot process is initiated in CLI. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Reboot process is initiated in CLI]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-CLI-Reboot-Initiated</setEventAttribute>
+</case>
+<case>
+<!-- Reboot process is initiated. Reason: test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Reboot process is initiated. Reason: <shutdownReason:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Reboot-Initiated</setEventAttribute>
+</case>
+<case>
+<!-- Re-initialize deception VM based on scadav1 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Re-initialize deception VM based on <hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Re-Initialized</setEventAttribute>
+</case>
+<case>
+<!-- Reinitialize deception VM due to initialization package was changed: name=1111 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Reinitialize deception VM due to initialization package was changed: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Re-Initialized</setEventAttribute>
+</case>
+<case>
+<!-- Reinitialize deception VM due to previous result is not matched with current version: name=123 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Reinitialize deception VM due to previous result is not matched with current version: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Re-Initialized</setEventAttribute>
+</case>
+<case>
+<!-- Reinitialize the data handler based on new network configuration i0:m1 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Reinitialize the data handler based on new network configuration]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Re-Initialized-DataHandler</setEventAttribute>
+</case>
+<case>
+<!-- Restarted deception VM: name=test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Restarted deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Restarted</setEventAttribute>
+</case>
+<case>
+<!-- Restoring system configuration using backup file FDC-VM0000000083_v2.00-build0005-branchpt0000_20190206-0914 (1).conf -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Restoring system configuration<:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Restoring-Configuration</setEventAttribute>
+</case>
+<case>
+<!-- Send out gratuitous ARP request over interface port1 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Send out gratuitous ARP request over interface <intfName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-ARP-Request</setEventAttribute>
+</case>
+<case>
+<!-- Session timeout, administrator admin logged out from x.x.x.x. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Session timeout, administrator <:gPatStr> logged out from <srcIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-GUI-Session-Timeout</setEventAttribute>
+</case>
+<case>
+<!-- Session Time Out, logged out website successfully from x.x.x.x -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Session Time Out, logged out website successfully from <srcIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-GUI-Session-Timeout</setEventAttribute>
+</case>
+<case>
+<!-- Set idle timeout to 480 minutes successfully. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Set idle timeout to <:gPatStr> minutes successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Idle-Timeout</setEventAttribute>
+</case>
+<case>
+<!-- Skip activating scadav1 due to the firmware license is trial version -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Skip activating <hostName:gPatStr> due to <errReason:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Activation-Skipped</setEventAttribute>
+</case>
+<case>
+<!-- Starting activate win7x86v1 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Starting activate <hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Activation-Started</setEventAttribute>
+</case>
+<case>
+<!-- Starting deception VM: name=1111 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Starting deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Starting-Deception</setEventAttribute>
+</case>
+<case>
+<!-- Starting IDS processor -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Starting IDS processor]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Starting-IDS-Processor</setEventAttribute>
+</case>
+<case>
+<!-- Started IDS processor -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Started IDS processor successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Started-IDS-Processor</setEventAttribute>
+</case>
+<case>
+<!-- The deployment network for PORT port2 VLAN 0 was created with address x.x.x.x/xx successfully -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The deployment network for PORT <:gPatStr> VLAN <:gPatStr> was created with address <:gPatStr> successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Deployment-Network-Created</setEventAttribute>
+</case>
+<case>
+<!-- Start initializing deception VMs -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Start initializing deception VMs]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-DeceptionOS-Initializing</setEventAttribute>
+</case>
+<case>
+<!-- Start initializing deception OS -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Start initializing deception OS]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-DeceptionOS-Initializing</setEventAttribute>
+</case>
+<case>
+<!-- Start initializing VMs -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Start initializing VMs]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Initializing</setEventAttribute>
+</case>
+<case>
+<!-- Start initializing decoys -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Start initializing decoys]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Initializing</setEventAttribute>
+</case>
+<case>
+<!-- Stopping deception VM: name=lintest -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Stopping deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Stopping-Decoy</setEventAttribute>
+</case>
+<case>
+<!-- Submission of the following package file failed:dctool_00001.pkg.Please make sure the package has correct format and a higher version -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Submission of the following package file failed:<:gPatMesgBody>.Please make sure the package has correct format and a higher version]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Package-Submission-Error</setEventAttribute>
+</case>
+<case>
+<!-- Successfully deleted deception VM: name=0test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully deleted deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Deleted</setEventAttribute>
+</case>
+<case>
+<!-- Successfully delete deception VM: name=test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully delete deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Deleted</setEventAttribute>
+</case>
+<case>
+<!-- Successfully init deception VM: name=test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully init deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Initialized-Successfully</setEventAttribute>
+</case>
+<case>
+<!-- Successfully initialized deception VM: name=1111 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully initialized deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Initialized-Successfully</setEventAttribute>
+</case>
+<case>
+<!-- Successfully installed AntiVirus Engine package with verion 00006.00019 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully installed AntiVirus Engine package with vers?ion <scanEngineVer:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-AV-Engine-Install-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully installed AntiVirus Active Signature with verion 00066.01070 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully installed AntiVirus(?:\s<signatureName:gPatStr>)? Signature(?: package)? with vers?ion <scanEngineVer:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-AV-Signature-Install-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully installed Breach Detection Engine with ver 02000.00001 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully installed Breach Detection Engine with ver <scanEngineVer:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-AV-Breach-Sig-Install-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully installed IDS Engine package with verion 00004.00025 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully installed IDS Engine package with vers?ion <scanEngineVer:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-IDS-Engine-Install-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully installed IDS Signature with verion 00014.00536 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully installed IDS Signature(?: package)? with vers?ion <scanEngineVer:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-IDS-Signature-Install-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully installed with verion 00000.00000 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully installed with vers?ion <scanEngineVer:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Install-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully operated the following deception VM(s): 0test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully operated the following deception VM\(s\):(?:\s?<hostName:gPatStr>?)]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Operation-Success</setEventAttribute>
+</case>
+<case>
+<!-- msg="Traceback (most recent call last): File .... " -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Traceback <:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Traceback-Error</setEventAttribute>
+</case>
+<case>
+<!-- Restarting deception VM: name=wwww -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Restarting deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Restarting</setEventAttribute>
+</case>
+<case>
+<!-- Successfully restarted deception VM: name=123 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully restarted deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Restarted-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully start deception VM: name=test -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully start deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Start-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully started deception VM: name=1111 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully started deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Start-Success</setEventAttribute>
+</case>
+<case>
+<!-- Successfully stopped deception VM: name=www -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully stopped deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Stopped-Success</setEventAttribute>
+</case>
+<case>
+<!-- System time change is detected, reload license information -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[System time change is detected, reload license information]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Time-Change-Detected</setEventAttribute>
+</case>
+<case>
+<!-- System time setting was changed -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[System time setting was changed]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Time-Change-Detected</setEventAttribute>
+</case>
+<case>
+<!-- System time zone setting was changed -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[System time zone setting was changed]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-TimeZone-Change-Detected</setEventAttribute>
+</case>
+<case>
+<!-- Table View Settings were updated successfully. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Table View Settings were updated successfully.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Table-View-Changes</setEventAttribute>
+</case>
+<case>
+<!-- The authentication to FDN server failed -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The authentication to FDN server failed]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-FDN-Auth-Server-Failure</setEventAttribute>
+</case>
+<case>
+<!-- The data handler was reinitialized successfully -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The data handler was reinitialized successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Data-Handler-ReInitialization</setEventAttribute>
+</case>
+<case>
+<!-- The firmware license is invalid or expired, deactive core components -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The firmware license is invalid or expired, deactive core components]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-License-Issue</setEventAttribute>
+</case>
+<case>
+<!-- The monitor interface for PORT port2 VLAN 0 was created with address x.x.x.x/24 successfully. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The monitor interface for PORT <intfName:gPatStr> VLAN <hostVLAN:gPatStr> was created with address <:gPatIpV4Dot>/\d+ successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Monitor-Interface-Created</setEventAttribute>
+</case>
+<case>
+<!-- The monitor interface for PORT port2 VLAN 0 was deleted with address x.x.x.x/24 successfully. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The monitor interface for PORT <intfName:gPatStr> VLAN <hostVLAN:gPatStr> was deleted with address <:gPatIpV4Dot>/\d+ successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Monitor-Interface-Deleted</setEventAttribute>
+</case>
+<case>
+<!-- The monitor interface for PORT port6 VLAN 0 was initialized with address x.x.x.x/24 successfully -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The monitor interface for PORT <intfName:gPatStr> VLAN <hostVLAN:gPatStr> was initialized with address <_ip:gPatIpV4Dot>/\d+ successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Monitor-Interface-Initialized</setEventAttribute>
+</case>
+<case>
+<!-- Too many login failures for administrator admin (IP:x.x.x.x). -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Too many login failures for administrator <:gPatStr> \(IP:<srcIpAddr:gPatIpV4Dot>\)]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Login-Failure-Alert</setEventAttribute>
+</case>
+<case>
+<!-- Top 10 Attackers by Incidents created with ID 10 from dashboard. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[<reportName:gPatMesgBody> created with ID <:gPatStr> from dashboard]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Dashboard-Report-Added</setEventAttribute>
+</case>
+<case>
+<!-- Global Incidents Distribution deleted with ID 10 from dashboard. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[<reportName:gPatMesgBody> deleted with ID <:gPatStr> from dashboard]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Dashboard-Report-Deleted</setEventAttribute>
+</case>
+<case>
+<!-- Unset default gateway successfully. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Unset default gateway successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Unset-Default-GW</setEventAttribute>
+</case>
+<case>
+<!-- Updated Login Disclaimer setting -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Updated Login Disclaimer setting]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Updated-Disclaimer</setEventAttribute>
+</case>
+<case>
+<!-- Set Login Disclaimer successfully to 'PREWARNINGWARNINGWARNINGWARNING This is a private computer system. Unauthorized access or use is prohibited and subject to prosecution and/or disciplinary action. All use of this system constitutes consent to monitoring at all times and users are not entitled to any expectation of privacy. If monitoring reveals possible evidence of violation of criminal statutes, this evidence and any other related information, including identification information about the user, may be provided to law enforcement officials. If monitoring reveals violations of security regulations or unauthorized use, employees who violate security regulations or make unauthorized use of this system are subject to appropriate disciplinary action. PREWARNINGWARNINGWARNINGWARNING11111'. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Set Login Disclaimer successfully to <:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Login-Disclaimer-Set</setEventAttribute>
+</case>
+<case>
+<!-- Disclaimer message was updated successfully. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Disclaimer message was updated successfully.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Disclaimer-Updated</setEventAttribute>
+</case>
+<case>
+<!-- Uploaded package /drive0/system/temp-upgrade/avadb-00066.01138-d097b164a1d2dd51d55172b93fd7efb8 is older than current running version. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Uploaded package <fileName:gPatStr> is older than current running version]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Uploaded-Package</setEventAttribute>
+</case>
+<case>
+<!-- urlreader is done. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[urlreader is done]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-URLReader-Done</setEventAttribute>
+</case>
+<case>
+<!-- urlreader is starting. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[urlreader is starting]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-URLReader-Starting</setEventAttribute>
+</case>
+<case>
+<!-- Valid firmware license is detected, initialize core components -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Valid firmware license is detected, initialize core components]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-License-Valid</setEventAttribute>
+</case>
+<case>
+<!-- VM image package was successfully downloaded via CLI. Start installing VM system. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[VM image package was successfully downloaded via CLI. Start installing VM system]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Package-Downloaded</setEventAttribute>
+</case>
+<case>
+<!-- VM image vmimage.tmp was successfully installed. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[VM image <hostName:gPatStr> was successfully installed]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Image-Installed</setEventAttribute>
+</case>
+<case>
+<!-- VM license file xxxx was successfully imported. Rebooting system. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[VM license file <fileName:gPatStr> was successfully imported. Rebooting system]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-License-Imported</setEventAttribute>
+</case>
+<case>
+<!-- VM license file was successfully imported. Rebooting system. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[VM license file was successfully imported. Rebooting system]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-License-Imported</setEventAttribute>
+</case>
+<case>
+<!-- VM package was successfully installed. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[VM package was successfully installed]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Package-Installed</setEventAttribute>
+</case>
+<case>
+<!-- VM scadav1 was successfully initialized -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[VM <hostName:gPatStr> was successfully initialized]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Initialized</setEventAttribute>
+</case>
+<case>
+<!-- Whitelist was successfully updated. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Whitelist was successfully updated]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Safelist-Updated</setEventAttribute>
+</case>
+<case>
+<!-- Initializing deception VM: name=ww -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Initializing deception VM: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Initializing</setEventAttribute>
+</case>
+<case>
+<!-- Stop to initialize deception VM due to new operation is triggered: name=ww -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Stop to initialize deception VM due to new operation is triggered: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-VM-Initialize-Stop</setEventAttribute>
+</case>
+<case>
+<!-- msg='Successfully operated on the following decoy(s): Ubuntu-Test' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully operated on the following decoy\(s\): <hostName:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Successful-Operation</setEventAttribute>
+</case>
+<case>
+<!-- msg='Decoy Win10-1-Decoy was successfully deployed.' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Decoy <hostName:gPatStr> was successfully deployed]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Successfully-Deployed</setEventAttribute>
+</case>
+<case>
+<!-- msg='Deleting decoy: name=Win10' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Deleting decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Deleting</setEventAttribute>
+</case>
+<case>
+<!-- msg='Successfully deleted decoy: name=Win10' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully deleted decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Deleted-Success</setEventAttribute>
+</case>
+<case>
+<!-- msg='Decoy template Copy of LinuxCD was deleted successfully.' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Decoy template Copy of <hostName:gPatStr> was deleted successfully.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Template-Deleted</setEventAttribute>
+</case>
+<case>
+<!-- msg='Successfully initialized decoy: name=Ubuntu-Test' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully initialized decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Initialized</setEventAttribute>
+</case>
+<case>
+<!-- msg='Initializing decoy: name=Ubuntu-Test' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Initializing decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Initializing</setEventAttribute>
+</case>
+<case>
+<!-- msg='Reinitialize decoy due to initialization package was changed: name=Ubuntu-Test' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Reinitialize decoy due to initialization package was changed: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Reinitialize</setEventAttribute>
+</case>
+<case>
+<!-- msg='Re-initialize decoy based on scadav1' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Re-initialize decoy based on <hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Reinitialize</setEventAttribute>
+</case>
+<case>
+<!-- msg='Starting decoy: name=Win7' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Starting decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Starting</setEventAttribute>
+</case>
+<case>
+<!-- msg='Successfully started decoy: name=Win7' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully started decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Started</setEventAttribute>
+</case>
+<case>
+<!-- msg='Successfully stopped decoy: name=Win7' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully stopped decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Stopped</setEventAttribute>
+</case>
+<case>
+<!-- msg='Stopping decoy: name=Win7' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Stopping decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Stopping</setEventAttribute>
+</case>
+<case>
+<!-- msg='Successfully restarted decoy: name=Win10-1-Decoy' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Successfully restarted decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Restarted</setEventAttribute>
+</case>
+<case>
+<!-- msg='Restarting decoy: name=Win10-1-Decoy' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Restarting decoy: name=<hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Restarting</setEventAttribute>
+</case>
+<case>
+<!-- msg='Fabric configuration was successfully saved' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Fabric configuration was successfully saved]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Fabric-Config-Saved</setEventAttribute>
+</case>
+<case>
+<!-- msg='Source IP addresses ['x.x.x.x'] were quarantined at FortiGate x.x.x.x' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Source IP addresses \['<_srcIpList:gPatMesgBodyMin>'\] were quarantined at FortiGate <destIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-IP-Quarantined</setEventAttribute>
+</case>
+<case>
+<!-- msg='Source IP addresses ['x.x.x.x'] were unblocked at FortiGate x.x.x.x' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Source IP addresses \['<srcIpAddr:gPatIpV4Dot>'\] were unblocked at FortiGate <destIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-IP-Unblocked</setEventAttribute>
+</case>
+<case>
+<!-- msg='Package Manager: VM package win10v1 was successfully installed' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Package Manager: VM package <hostName:gPatStr> vv]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-PM-Package-Successfully-Installed</setEventAttribute>
+</case>
+<case>
+<!-- msg='Package Manager: Successfully downloaded win10v1' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Package Manager: Successfully downloaded <hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-PM-Download-Success</setEventAttribute>
+</case>
+<case>
+<!-- msg='Package Manager: Start downloading win10v1' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Package Manager: Start downloading <hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-PM-Start-Download</setEventAttribute>
+</case>
+<case>
+<!-- msg='Package Manager: Start installing scadav1' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Package Manager: Start installing <hostName:gPatStr>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-PM-Start-Install</setEventAttribute>
+</case>
+<case>
+<!-- msg='Package was generated successfully for decoy: x.x.x.x' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Package was generated successfully for decoy: <hostIpAddr:gPatIpV4Dot>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Package-Gen-Success</setEventAttribute>
+</case>
+<case>
+<!-- msg='Deception OS scadav1 was successfully initialized' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Deception OS scadav1 was successfully initialized]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-DeceptionOS-Successfully-Initialized</setEventAttribute>
+</case>
+<case>
+<!-- msg="Package Manager: Failed to download win7x86v1, code=11" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Package Manager: Failed to download <hostName:gPatStr>, code=\d+]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Decoy-Package-Download-Failed</setEventAttribute>
+</case>
+<case>
+<!-- msg="Set DNS server successfully" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Set DNS server successfully]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-DNS-Server-Set</setEventAttribute>
+</case>
+<case>
+<!-- msg="DNS configuration was successfully updated" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[DNS configuration was successfully updated]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-DNS-Config-Updated</setEventAttribute>
+</case>
+<case>
+<!-- msg="Routing configuration was successfully updated" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Routing configuration was successfully updated]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Routing-Config-Updated</setEventAttribute>
+</case>
+<case>
+<!-- msg="Reset widgets on all container page" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Reset widgets on all container page]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Widgets-Reset</setEventAttribute>
+</case>
+<case>
+<!-- msg="SNMP base settings were set" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[SNMP base settings were set]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SNMP-Set</setEventAttribute>
+</case>
+<case>
+<!-- msg="SNMP base settings were edited" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[SNMP base settings were edited]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SNMP-Settings-Edited</setEventAttribute>
+</case>
+<case>
+<!-- msg="SNMP trap: warm start" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[SNMP trap: <type:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SNMP-Trap</setEventAttribute>
+</case>
+<case>
+<!-- msg="SNMPd is starting" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[SNMPd is starting]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SNMP-Daemon-Starting</setEventAttribute>
+</case>
+<case>
+<!-- msg="SNMPd was shutdown" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[SNMPd was shutdown]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SNMP-Daemon-Shutdown</setEventAttribute>
+</case>
+<case>
+<!-- msg="SNMP v12c object was updated" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[SNMP (?:v12c|v3) object was updated]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SNMP-Object-Updated</setEventAttribute>
+</case>
+<case>
+<!-- msg="SNMP v12c host object was created" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[SNMP (?:v12c|v3) object was created]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SNMP-Object-Created</setEventAttribute>
+</case>
+<case>
+<!-- msg="SNMP v3 object was deleted" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[SNMP (?:v12c|v3) object was deleted]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-SNMP-Object-Deleted</setEventAttribute>
+</case>
+<case>
+<!-- msg="New LDAP server was successfully added" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[New LDAP server was successfully added]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-LDAP-Server-Added</setEventAttribute>
+</case>
+<case>
+<!-- msg="LDAP Server xxxx were successfully deleted" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[LDAP Server <:gPatStr> were successfully deleted]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-LDAP-Server-Deleted</setEventAttribute>
+</case>
+<case>
+<!-- msg="Mail Server config successfully saved" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Mail Server config successfully saved]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Mail-Config-Saved</setEventAttribute>
+</case>
+<case>
+<!-- msg="New admin profile xxxxx was added" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[New admin profile <profileName:gPatStr> was added]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Admin-Profile-Added</setEventAttribute>
+</case>
+<case>
+<!-- msg="Admin profile xxxxx was successfully deleted" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Admin profile <profileName:gPatStr> was successfully deleted]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Admin-Profile-Added</setEventAttribute>
+</case>
+<case>
+<!-- msg="Information of administrator admin was successfully updated" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Information of administrator <user:gPatStr> was successfully updated]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Admin-User-Information-Updated</setEventAttribute>
+</case>
+<case>
+<!-- msg="New administrator was added" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[New administrator was added]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-New-Admin-User-Added</setEventAttribute>
+</case>
+<case>
+<!-- msg="Administrator xxx was successfully deleted" -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Administrator\s<user:gPatStr>\swas successfully deleted]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Admin-User-Deleted</setEventAttribute>
+</case>
+<case>
+<!-- msg='event matched whitelist rule: src_ip=x.x.x.x, src_ports=all, dest_ports=all, services=all' -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[event matched whitelist rule: <item:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Event-Safelist-Match</setEventAttribute>
+</case>
+<case>
+<!-- Source IP address(es) ['192.168.1.25'] were blocked by webhook fgtblocker1 with residual ttl 3600 -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Source IP address\(es\) \['<srcIpAddr:gPatIpAddr>'\] were blocked by webhook <endpoint:gPatStr> with residual ttl <ipTtl:gPatInt>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Event-Source-Blocked</setEventAttribute>
+</case>
+<case>
+<!-- event dropped: {some event} -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[event dropped: <:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Event-Dropped</setEventAttribute>
+</case>
+<case>
+<!-- Source IP addresses [192.168.1.25] were blocked by Fabric Upstream -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Source IP addresses \[<srcIpAddr:gPatIpAddr>\] were <opName:gPatWord> by <deviceType:gPatStr> Upstream]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">combineMsgId("FortiDeceptor-Event-Upstream-", $opName)</setEventAttribute>
+</case>
+<case>
+<!-- Failed to block source IP address(es) ['192.168.1.25'] by FortiGate fw1. Authentication failed. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[Failed to block source IP address\(es\) \['<srcIpAddr:gPatIpAddr>'\] by <deviceType:gPatStr> <appName:gPatStr>\.\s+<reason:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Event-BlockFailure</setEventAttribute>
+</case>
+<case>
+<!-- Fabric configuration fw1 was successfully updated. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[<type:gPatWord> configuration <configName:gPatStr> was successfully <opName:gPatWord>\.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">combineMsgId("FortiDeceptor-ConfigSuccess-", $type, "-", $opName)</setEventAttribute>
+</case>
+<case>
+<!-- Upstream configuration was successfully applied. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[<configName:gPatStr> configuration was successfully applied\.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">FortiDeceptor-Config-Successfully-Applied</setEventAttribute>
+</case>
+<case>
+<!-- The integration connection to fabric device fw1 is failed for quarantine. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The integration connection to fabric device <hostName:gPatStr> is <opName:gPatWord> for quarantine\.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">combineMsgId("FortiDeceptor-IntegrationConnect-Quarantine-", $opName)</setEventAttribute>
+</case>
+<case>
+<!-- Unblock 192.168.1.25 operation of fabricupstream failed. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[<opName:gPatWord> <srcIpAddr:gPatIpAddr> operation of <appName:gPatStr> <status:gPatWord>\.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">combineMsgId("FortiDeceptor-Operation-", $opName, "-", $status)</setEventAttribute>
+</case>
+<case>
+<!-- The Quarantine Status for ID 4 was deleted successfully. -->
+<collectFieldsByRegex src="$msg">
+<regex><![CDATA[The Quarantine Status for ID <policyId:gPatInt> was <opName:gPatWord> <status:gPatWord>\.]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="eventType">combineMsgId("FortiDeceptor-Quarantine-", $opName, "-", $status)</setEventAttribute>
+</case>
+<default/>
+</switch>
+</otherwise>
+</choose>
+<when test="exist _srcIpList">
+<switch>
+<case>
+<collectFieldsByRegex src="$_srcIpList">
+<regex><![CDATA[^<srcIpAddr:gPatIpAddr>$]]></regex>
+</collectFieldsByRegex>
+</case>
+<case>
+<collectFieldsByRegex src="$_srcIpList">
+<regex><![CDATA[^<srcIpAddr:gPatIpAddr>'?\s*,]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="srcIpAddrList">replaceStrInStr($_srcIpList, "'", "")</setEventAttribute>
+</case>
+<default/>
+</switch>
+</when>
+</parsingInstructions>
