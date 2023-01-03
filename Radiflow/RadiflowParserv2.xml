@@ -1,0 +1,47 @@
+<patternDefinitions>
+    <pattern name="patStrEndSep"><![CDATA[[^|]+]]></pattern>
+</patternDefinitions>
+<eventFormatRecognizer><![CDATA[radiflow\|isid]]></eventFormatRecognizer>
+<parsingInstructions>
+<collectFieldsByRegex src="$_rawmsg">
+    <regex>
+        <![CDATA[<:gPatSyslogPRI>\d+\s?<_year:gPatYear>-<_mon:gPatMonNum>-<_day:gPatDay>\w<_time:gPatTime>\.\d+<_zone:gPatTimeZone>\s<_hostname:gPatHostName>\s<_hostname2:gPatHostName>\s\-\s\-\s\-\sCEF\s*:<_body:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="deviceTime">toDateTime($_mon, $_day, $_year, $_time)</setEventAttribute>
+<when test="matches($_body, '\\\|')">
+    <setEventAttribute attr="_body">replaceStrInStr($_body, "\|", "::TEMP::")</setEventAttribute>
+</when>
+<setEventAttribute attr="_body">replaceStrInStr($_body, "|", "::SEP::")</setEventAttribute>
+<when test="matches($_body, '::TEMP::')">
+    <setEventAttribute attr="_body">replaceStrInStr($_body, "::TEMP::", "|")</setEventAttribute>
+</when>
+<collectAndSetAttrByPos sep="::SEP::" src="$_body">
+    <attrPosMap attr="version" pos="1"/>
+    <attrPosMap attr="_devVendor" pos="2"/>
+    <attrPosMap attr="_devProduct" pos="3"/>
+    <attrPosMap attr="appVersion" pos="4"/>
+    <attrPosMap attr="_sigId" pos="5"/>
+    <attrPosMap attr="categoryType" pos="6"/>
+    <attrPosMap attr="_severity" pos="7"/>
+    <attrPosMap attr="_extension" pos="8"/>
+</collectAndSetAttrByPos>
+<setEventAttribute attr="reptVendor">$_devVendor</setEventAttribute>
+<setEventAttribute attr="reptModel">$_devProduct</setEventAttribute>
+<setEventAttribute attr="_extension">replaceStrInStr($_extension, "\=", "=")</setEventAttribute>
+<collectFieldsByKeyValuePair kvsep="=" sep=" " src="$_extension">
+    <attrKeyMap attr="devEventTypeGrp" key="cat"/>
+    <attrKeyMap attr="_eventId" key="id"/>
+    <attrKeyMap attr="srcIpAddr" key="src"/>
+    <attrKeyMap attr="destIpAddr" key="dst"/>
+    <attrKeyMap attr="appProtoId" key="pt"/>
+    <attrKeyMap attr="appTransportProto" key="PtName"/>
+    <attrKeyMap attr="srcName" key="SrcName"/>
+    <attrKeyMap attr="srcMACAddr" key="SrcMac"/>
+    <attrKeyMap attr="destMACAddr" key="DstMac"/>
+    <attrKeyMap attr="reptVendor" key="SrcVendor"/>
+    <attrKeyMap attr="hostVendor" key="DstVendor"/>
+    <attrKeyMap attr="srcType" key="SrcType"/>
+    <attrKeyMap attr="destType" key="DstType"/>
+</collectFieldsByKeyValuePair>
+<setEventAttribute attr="eventType">combineMsgId("Radiflow-", $categoryType)</setEventAttribute>
+</parsingInstructions>
