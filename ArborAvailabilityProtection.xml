@@ -1,0 +1,46 @@
+<!--
+<30>Mar  4 12:34:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 51.38.64.136 at 12:33 by ATLAS Threat Categories using TCP/443 (HTTPS) destination 94.200.205.225 source port 43522,ELID: 12773630,THREAT_NAME: Exit Node,PATTERN: 51.38.64.136,EPOCH: 1583310810,PGID: 56,PGNAME: Smartservices,MATCH_TYPE: ip,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 14:37:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 109.226.44.184 at 14:37 by Blocked Countries using TCP/23 (TELNET) destination 94.200.205.238 source port 19793,EPOCH: 1583318250,PGID: 17,PGNAME: Default Protection Group,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 11:42:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 98.155.3.83 at 11:41 by Botnet Prevention using TCP/80 (HTTP) destination 94.200.205.225 source port 48140,EPOCH: 1583307690,PGID: 56,PGNAME: Smartservices,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 14:38:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 210.5.156.196 at 14:38 by Filter List using TCP/445 (MICROSOFT-DS) destination 94.200.205.251 source port 58206,EPOCH: 1583318310,PGID: 17,PGNAME: Default Protection Group,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 14:22:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 217.165.68.31 at 14:22 by Fragment Detection using TCP/443 (HTTPS) destination 94.200.205.225 source port 52779,EPOCH: 1583317350,PGID: 56,PGNAME: Smartservices,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 12:30:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 80.81.193.164 at 12:30 by ICMP Flood Detection using ICMP destination 94.200.205.236 source port 2816,EPOCH: 1583310630,PGID: 17,PGNAME: Default Protection Group,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 14:28:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 86.98.3.243 at 14:28 by Invalid Packets using TCP/443 (HTTPS) destination 94.200.205.226 source port 54999,EPOCH: 1583317710,PGID: 61,PGNAME: Beta Smartservices,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 14:37:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 172.16.0.30 at 14:37 by Private Address Blocking using TCP/443 (HTTPS) destination 94.200.205.226 source port 63004,EPOCH: 1583318250,PGID: 61,PGNAME: Beta Smartservices,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 13:57:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 86.98.143.159 at 13:56 by Rate-based Blocking using TCP/443 (HTTPS) destination 94.200.205.225 source port 56331,EPOCH: 1583315790,PGID: 56,PGNAME: Smartservices,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 13:38:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 217.164.217.61 at 13:38 by TCP Connection Limiting using TCP/443 (HTTPS) destination 94.200.205.226 source port 57599,EPOCH: 1583314710,PGID: 61,PGNAME: Beta Smartservices,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+<30>Mar  4 14:38:31 ICA-DMZ-WEB-Zone-ARBOR-01  arbor-networks-aps:Blocked Host: Blocked host 170.0.13.218 at 14:37 by TCP SYN Flood Detection using TCP/445 (MICROSOFT-DS) destination 94.200.205.247 source port 42711,EPOCH: 1583318250,PGID: 17,PGNAME: Default Protection Group,URL: https://ICA-DMZ-WEB-Zone-ARBOR-01/summary/
+-->
+<patternDefinitions>
+<pattern name="gPatStrEndDigit"><![CDATA[[^\d+]*]]></pattern>
+<pattern name="gPatStrRightParen"><![CDATA[[^\)]*]]></pattern>
+<pattern name="gPatTimeHR"><![CDATA[\d{1,2}:\d{1,2}]]></pattern>
+</patternDefinitions>
+<eventFormatRecognizer><![CDATA[\s+arbor-networks-aps\:]]></eventFormatRecognizer>
+<parsingInstructions>
+<collectFieldsByRegex src="$_rawmsg">
+<regex><![CDATA[^\s*<:gPatSyslogPRI><_mon:gPatMon>\s+<_day:gPatDay>\s+<_time:gPatTime>\s+<reptDevName:gPatHostName>\s+arbor-networks-aps\:<eventAction:gPatStrEndColon><_body:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+<setEventAttribute attr="deviceTime">toDateTime($_mon, $_day, $_time)</setEventAttribute>
+<switch>
+<case>
+<collectFieldsByRegex src="$_body">
+<regex><![CDATA[<:gPatStrEndDigit><srcIpAddr:gPatIpV4Dot>\s+at\s+<actionTime:gPatTimeHR>\s+by\s+<policyName:gPatSentence>\s+using\s+<destProto:gPatWord>\/<destIpPort:gPatInt>\s+\(<appTransportProto:gPatStrRightParen>\)\s+destination\s+<destIpAddr:gPatIpV4Dot>\s+source\s+port\s+<srcIpPort:gPatInt>,<_msg:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+</case>
+<case>
+<collectFieldsByRegex src="$_body">
+<regex><![CDATA[<:gPatStrEndDigit><srcIpAddr:gPatIpV4Dot>\s+at\s+<actionTime:gPatTimeHR>\s+by\s+<policyName:gPatSentence>\s+using\s+<destProto:gPatWord>\s+destination\s+<destIpAddr:gPatIpV4Dot>\s+source\s+port\s+<srcIpPort:gPatInt>,<_msg:gPatMesgBody>]]></regex>
+</collectFieldsByRegex>
+</case>
+</switch>
+<collectAndSetAttrByKeyValuePair sep="," src="$_msg">
+<attrKeyMap attr="actionTime" key="EPOCH:"/>
+<attrKeyMap attr="procId" key="PGID:"/>
+<attrKeyMap attr="procName" key="PGNAME:"/>
+<attrKeyMap attr="infoURL" key="URL:"/>
+</collectAndSetAttrByKeyValuePair>
+<setEventAttribute attr="_formatedPolicyName">replaceStringByRegex($policyName, "\s+", "-")</setEventAttribute>
+<setEventAttribute attr="_formatedEventAction">replaceStringByRegex($eventAction, "\s+", "-")</setEventAttribute>
+<setEventAttribute attr="eventType">combineMsgId("Arbor-APS-",$_formatedEventAction,"-by-",$_formatedPolicyName)</setEventAttribute>
+</parsingInstructions>
