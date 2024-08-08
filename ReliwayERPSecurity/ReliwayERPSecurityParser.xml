@@ -1,0 +1,171 @@
+<eventFormatRecognizer><![CDATA[(CEF:0\|Reliway\|ERPSecurity)]]></eventFormatRecognizer><parsingInstructions>
+<switch>
+    <case>
+        <collectFieldsByRegex src="$_rawmsg">
+            <regex>
+                <![CDATA[<:gPatSyslogPRI>?\s*<_mon:gPatMon>\s+<_day:gPatDay>\s+<_time:gPatTime>\s+(?:<:gPatStr>\s+)?CEF\s*:<_body:gPatMesgBody>]]></regex>
+        </collectFieldsByRegex>
+        <setEventAttribute attr="deviceTime">toDateTime($_mon, $_day, $_time)</setEventAttribute>
+    </case>
+    <default>
+        <collectFieldsByRegex src="$_rawmsg">
+            <regex><![CDATA[^CEF\s*:<_body:gPatMesgBody>]]></regex>
+        </collectFieldsByRegex>
+    </default>
+</switch>
+<setEventAttribute attr="eventType">CEF-Generic</setEventAttribute>
+<when test="matches($_body, '\\\|')">
+    <setEventAttribute attr="_body">replaceStrInStr($_body, "\|", "::TEMP::")</setEventAttribute>
+</when>
+<setEventAttribute attr="_body">replaceStrInStr($_body, "|", "::SEP::")</setEventAttribute>
+<when test="matches($_body, '::TEMP::')">
+    <setEventAttribute attr="_body">replaceStrInStr($_body, "::TEMP::", "|")</setEventAttribute>
+</when>
+<collectAndSetAttrByPos sep="::SEP::" src="$_body">
+    <attrPosMap attr="version" pos="1"/>
+    <attrPosMap attr="_devVendor" pos="2"/>
+    <attrPosMap attr="_devProduct" pos="3"/>
+    <attrPosMap attr="appVersion" pos="4"/>
+    <attrPosMap attr="msgId" pos="5"/>
+    <attrPosMap attr="categoryType" pos="6"/>
+    <attrPosMap attr="_severity" pos="7"/>
+    <attrPosMap attr="_extension" pos="8"/>
+</collectAndSetAttrByPos>
+<setEventAttribute attr="reptVendor">$_devVendor</setEventAttribute>
+<setEventAttribute attr="reptModel">$_devProduct</setEventAttribute>
+<setEventAttribute attr="_extension">replaceStrInStr($_extension, "\=", "=")</setEventAttribute>
+<collectFieldsByKeyValuePair kvsep="=" sep=" " src="$_extension">
+    <attrKeyMap attr="_startTime" key="start"/>
+    <attrKeyMap attr="filePath" key="filePath"/>
+    <attrKeyMap attr="msg" key="msg"/>
+    <attrKeyMap attr="srcName" key="shost"/>
+    <attrKeyMap attr="srcUser" key="suser"/>
+    <attrKeyMap attr="devEventTypeGrp" key="cat"/>
+    <attrKeyMap attr="programName" key="program"/>
+    <attrKeyMap attr="transactionId" key="transaction"/>
+    <attrKeyMap attr="clientName" key="client"/>
+    <attrKeyMap attr="intfOperStatus" key="externalMode"/>
+    <attrKeyMap attr="transactionType" key="transactionMessage"/>
+</collectFieldsByKeyValuePair>
+<choose>
+    <when test="exist _eventId">
+        <setEventAttribute attr="eventType">combineMsgId($_devProduct,"-CEF-", $_eventId)</setEventAttribute>
+    </when>
+    <when test="exist remedyAction">
+        <setEventAttribute attr="eventType">combineMsgId($_devProduct, "-CEF-", $categoryType, "-",$remedyAction)
+        </setEventAttribute>
+    </when>
+    <otherwise>
+        <setEventAttribute attr="eventType">combineMsgId($_devProduct, "-CEF-", $categoryType)
+        </setEventAttribute>
+        <choose>
+            <when test="not_exist _hostIpAddr"/>
+            <when test="matches($categoryType, '^PH_RULE_')">
+                <setEventAttribute attr="incidentRptIp">$_hostIpAddr</setEventAttribute>
+            </when>
+            <otherwise>
+                <setEventAttribute attr="hostIpAddr">$_hostIpAddr</setEventAttribute>
+            </otherwise>
+        </choose>
+    </otherwise>
+</choose>
+<setEventAttribute attr="eventType">replaceStringByRegex($eventType, ":\s+", "-")</setEventAttribute>
+<setEventAttribute attr="eventType">replaceStringByRegex($eventType, "\s+", "-")
+</setEventAttribute><!-- MMM dd yyyy HH:mm:ss or milliseconds since epoch (Jan 1st 1970). -->
+<when test="exist _rt">
+    <switch>
+        <case>
+            <collectFieldsByRegex src="$_rt">
+                <regex><![CDATA[<_mon1:gPatMon>\s+<_day1:gPatDay>\s+<_year1:gPatYear>\s+<_time1:gPatTime>]]></regex>
+            </collectFieldsByRegex>
+            <setEventAttribute attr="eventTime">toDateTime($_mon1, $_day1, $_year1, $_time1)</setEventAttribute>
+        </case>
+        <case>
+            <collectFieldsByRegex src="$_rt">
+                <regex><![CDATA[^<eventTime:gPatInt>\d{3}$]]></regex>
+            </collectFieldsByRegex>
+        </case>
+        <default/>
+    </switch>
+</when>
+<when test="exist _endTime">
+    <switch>
+        <case>
+            <collectFieldsByRegex src="$_endTime">
+                <regex><![CDATA[<_mon1:gPatMon>\s+<_day1:gPatDay>\s+<_year1:gPatYear>\s+<_time1:gPatTime>]]></regex>
+            </collectFieldsByRegex>
+            <setEventAttribute attr="endTime">toDateTime($_mon1, $_day1, $_year1, $_time1)</setEventAttribute>
+        </case>
+        <case>
+            <collectFieldsByRegex src="$endTime">
+                <regex><![CDATA[^<endTime:gPatInt>\d{3}$]]></regex>
+            </collectFieldsByRegex>
+        </case>
+        <default/>
+    </switch>
+</when>
+<when test="exist _startTime">
+    <switch>
+        <case>
+            <collectFieldsByRegex src="$_startTime">
+                <regex><![CDATA[<_mon1:gPatMon>\s+<_day1:gPatDay>\s+<_year1:gPatYear>\s+<_time1:gPatTime>]]></regex>
+            </collectFieldsByRegex>
+            <setEventAttribute attr="startTime">toDateTime($_mon1, $_day1, $_year1, $_time1)</setEventAttribute>
+        </case>
+        <case>
+            <collectFieldsByRegex src="$_startTime">
+                <regex><![CDATA[^<startTime:gPatInt>\d{3}$]]></regex>
+            </collectFieldsByRegex>
+        </case>
+        <default/>
+    </switch>
+</when>
+<when test="exist _fileCreateTime">
+    <switch>
+        <case>
+            <collectFieldsByRegex src="$_fileCreateTime">
+                <regex><![CDATA[<_mon1:gPatMon>\s+<_day1:gPatDay>\s+<_year1:gPatYear>\s+<_time1:gPatTime>]]></regex>
+            </collectFieldsByRegex>
+            <setEventAttribute attr="fileCreateTime">toDateTime($_mon1, $_day1, $_year1, $_time1)
+            </setEventAttribute>
+        </case>
+        <case>
+            <collectFieldsByRegex src="$fileCreateTime">
+                <regex><![CDATA[^<fileCreateTime:gPatInt>\d{3}$]]></regex>
+            </collectFieldsByRegex>
+        </case>
+        <default/>
+    </switch>
+</when>
+<when test="exist _ipProto">
+    <setEventAttribute attr="ipProto">convertStrToIntIpProto($_ipProto)</setEventAttribute>
+</when>
+<when test="matches($msgId, 'AU1')">
+    <collectFieldsByRegex src="$_body">
+        <regex><![CDATA[\(type=<loginType:gPatMesgBodyMin>,\smethod=<authenMethod:gPatMesgBodyMin>\)]]></regex>
+    </collectFieldsByRegex>
+</when>
+<when test="matches($msgId, 'AU2')">
+    <collectFieldsByRegex src="$_body">
+        <regex>
+            <![CDATA[\(reason=<reason:gPatMesgBodyMin>,\stype=<loginType:gPatMesgBodyMin>,\smethod=<authenMethod:gPatMesgBodyMin>\)]]></regex>
+    </collectFieldsByRegex>
+</when>
+<choose>
+    <when test="not_exist _eventAction"/>
+    <when test="$_eventAction = 'success'">
+        <setEventAttribute attr="eventAction">0</setEventAttribute>
+    </when>
+    <otherwise>
+        <setEventAttribute attr="eventAction">1</setEventAttribute>
+    </otherwise>
+</choose>
+<choose>
+    <when test="$_severity = '0'">
+        <setEventAttribute attr="eventSeverity">1</setEventAttribute>
+    </when>
+    <otherwise>
+        <setEventAttribute attr="eventSeverity">$_severity</setEventAttribute>
+    </otherwise>
+</choose>
+</parsingInstructions>
