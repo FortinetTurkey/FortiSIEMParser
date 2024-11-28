@@ -1,9 +1,9 @@
 <patternDefinitions>
-    <pattern name="patWUAMod"><![CDATA[UserFile]]></pattern>
+    <pattern name="patWUAMod"><![CDATA[UserFile-ExchTrackLog]]></pattern>
 </patternDefinitions>
 
 
-<eventFormatRecognizer><![CDATA[\s<:gPatHostName>\s+<:gPatIpAddr>\s+AccelOps-WUA-<:patWUAMod>[- ]]]></eventFormatRecognizer>
+<eventFormatRecognizer><![CDATA[\s<:gPatHostName>\s+<:gPatIpAddr>\s+AccelOps-WUA-<:patWUAMod>]]></eventFormatRecognizer>
 
 
 <parsingInstructions>
