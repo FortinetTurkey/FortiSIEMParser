@@ -7663,6 +7663,11 @@
                     <regex><![CDATA["connectorId":(<flowConnId:gPatInt>)]]></regex>
                 </collectFieldsByRegex>
             </case>
+            <case>
+               <collectFieldsByRegex src="$fileName">
+                <regex><![CDATA["connectorId":(<flowConnId:gPatInt>)]]></regex>
+              </collectFieldsByRegex>
+           </case>
             <default/>
         </switch>
     </when>
