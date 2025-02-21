@@ -7657,17 +7657,40 @@
         <switch>
             <case>
                 <collectFieldsByRegex src="$fileName">
-                    <regex><![CDATA["idTag":"(<tagName:gPatMesgBodyMin>)"]]></regex>
+                  <regex><![CDATA["connectorId":(<flowConnId:gPatInt>)]]></regex>
                 </collectFieldsByRegex>
                 <collectFieldsByRegex src="$fileName">
-                    <regex><![CDATA["connectorId":(<flowConnId:gPatInt>)]]></regex>
+                  <regex><![CDATA["errorCode":"(<errorCode:gPatMesgBodyMin>)"]]></regex>
+                </collectFieldsByRegex>
+                <collectFieldsByRegex src="$fileName">
+                  <regex><![CDATA["status":"(<status:gPatMesgBodyMin>)"]]></regex>
                 </collectFieldsByRegex>
             </case>
+
+            <case>
+                <collectFieldsByRegex src="$fileName">
+                  <regex><![CDATA["idTag":"(<tagName:gPatMesgBodyMin>)"]]></regex>
+                </collectFieldsByRegex>
+                <collectFieldsByRegex src="$fileName">
+                 <regex><![CDATA["connectorId":(<flowConnId:gPatInt>)]]></regex>
+                </collectFieldsByRegex>
+            </case>
+
+            <case>
+                <collectFieldsByRegex src="$fileName">
+                 <regex><![CDATA["type":"(<appStatus:gPatMesgBodyMin>)"]]></regex>
+                </collectFieldsByRegex>
+                <collectFieldsByRegex src="$fileName">
+                 <regex><![CDATA["connectorId":(<flowConnId:gPatInt>)]]></regex>
+                </collectFieldsByRegex>
+            </case>
+
             <case>
                <collectFieldsByRegex src="$fileName">
                 <regex><![CDATA["connectorId":(<flowConnId:gPatInt>)]]></regex>
               </collectFieldsByRegex>
-           </case>
+            </case>
+
             <default/>
         </switch>
     </when>
